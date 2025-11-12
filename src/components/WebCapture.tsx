@@ -12,9 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 
 
-
-const FRAME_URL = "https://www.pngkey.com/png/full/8-88688_polaroid-frame-png-transparent-background-polaroid-frame-png.png";
-// ----------------
+const FRAME_URL = "/polaroid-frame.png";
 
 export function WebcamCapture() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -24,16 +22,18 @@ export function WebcamCapture() {
   const [fileName, setFileName] = useState<string>("my-photobox-photo");
   const [isFlashing, setIsFlashing] = useState(false);
 
-  
+
+  const [isFrameLoaded, setIsFrameLoaded] = useState(false);
+
+ 
   const frameImageRef = useRef(new Image());
-  // ----------------
   
 
-
+ 
   const startWebcam = useCallback(async () => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
-      setStream(mediaStream);
+      setStream(mediaStream); // Simpan stream ke state
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
         videoRef.current.play();
@@ -44,58 +44,54 @@ export function WebcamCapture() {
     }
   }, []);
 
-  
+  // 2. Fungsi untuk mengambil foto
   const takePhoto = useCallback(() => {
-    
     if (videoRef.current && canvasRef.current && frameImageRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      const frame = frameImageRef.current; 
+      const frame = frameImageRef.current;
+
+      // Guard clause (pengaman ganda)
       if (video.videoWidth === 0 || video.videoHeight === 0) {
-        alert("Kamera belum siap. Coba klik lagi.");
+        alert("Kamera belum siap. Coba lagi.");
         return;
       }
       
-     
       if (!frame.complete || frame.naturalWidth === 0) {
         alert("Frame gambar belum siap. Coba lagi sesaat.");
         return;
       }
 
+      // Atur ukuran canvas agar SAMA DENGAN UKURAN FRAME
       canvas.width = frame.naturalWidth;
       canvas.height = frame.naturalHeight;
-
       const context = canvas.getContext("2d");
+
       if (context) {
-        
+        // Gambar foto webcam
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-       
+        // Gambar frame DI ATAS foto webcam
         context.drawImage(frame, 0, 0, canvas.width, canvas.height);
-
         
         const imageDataURL = canvas.toDataURL("image/png");
 
-       
+        // Jalankan efek flash
         setIsFlashing(true); 
         setTimeout(() => {
           setIsFlashing(false);
-          setPhoto(imageDataURL); 
+          setPhoto(imageDataURL);
         }, 150);
       }
     }
-  }, []); 
+  }, []);
 
- 
+  // 3. Fungsi retakePhoto
   const retakePhoto = useCallback(() => {
     setPhoto(null);
     setFileName("my-photobox-photo");
-    if (!stream) {
-        startWebcam(); 
-    }
-  }, [stream, startWebcam]);
+  }, []);
 
- 
+  // 4. Fungsi downloadPhoto
   const downloadPhoto = useCallback(() => {
     if (photo) {
       const link = document.createElement("a");
@@ -107,28 +103,37 @@ export function WebcamCapture() {
     }
   }, [photo, fileName]);
 
-
+  // 5. Efek untuk memulai webcam dan memuat frame (FIXED)
   useEffect(() => {
-    startWebcam();
-
-
-    frameImageRef.current.crossOrigin = "anonymous"; 
+    // Hapus 'crossOrigin' karena file sudah lokal
     frameImageRef.current.src = FRAME_URL;
     frameImageRef.current.onload = () => {
-      console.log("Gambar frame berhasil di-load.");
+      console.log("Gambar frame lokal berhasil di-load.");
+      setIsFrameLoaded(true); // Set state saat frame siap
     };
     frameImageRef.current.onerror = () => {
-        console.error("Gagal me-load gambar frame.");
+        console.error("Gagal me-load gambar frame lokal.");
+        alert("FATAL: Gagal memuat file frame. Pastikan file ada di folder /public.");
     };
-    // ------------
+    
+    // Mulai webcam
+    startWebcam();
 
+    // Fungsi cleanup (berjalan saat komponen dibongkar/unmount)
     return () => {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
+      if (videoRef.current && videoRef.current.srcObject) {
+        try {
+          const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
+          tracks.forEach((track) => track.stop());
+          console.log("Webcam stream dihentikan.");
+        } catch (error) {
+          console.error("Gagal menghentikan stream:", error);
+        }
       }
     };
-  }, [startWebcam, stream]); 
+  }, [startWebcam]); // Dependensi hanya 'startWebcam' untuk mencegah loop
 
+  // JSX (Render)
   return (
     <div className="flex flex-col items-center p-4">
       <div className="relative w-full max-w-lg mb-4 rounded-lg overflow-hidden border border-gray-300 shadow-lg">
@@ -140,19 +145,22 @@ export function WebcamCapture() {
           muted 
         />
         <canvas ref={canvasRef} className="hidden" /> 
+        {/* Efek Flash */}
         {isFlashing && (
           <div className="absolute inset-0 bg-white opacity-90 z-10" />
         )}
       </div>
 
+      {/* Tombol dengan logika loading */}
       <Button 
         onClick={takePhoto} 
         className="mb-6 px-8 py-4 text-lg font-bold"
-        disabled={!stream}
+        disabled={!stream || !isFrameLoaded} 
       >
-        Ambil Foto!
+        {!stream ? "Menunggu Kamera..." : !isFrameLoaded ? "Memuat Frame..." : "Ambil Foto!"}
       </Button>
 
+      {/* Modal Preview Foto */}
       <Dialog open={!!photo} onOpenChange={(open) => !open && retakePhoto()}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
